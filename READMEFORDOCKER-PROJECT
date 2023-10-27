@@ -1,0 +1,187 @@
+I was still getting so many errors with my kubeconfgi file, kubectl is now working but i could not use docker desktop
+ i did kubectl apply -f deployment.yaml and got the error below
+Unable to connect to the server: dial tcp: lookup 24B18AA6FCBAAEAF6D1510F2759670D1.gr7.us-east-1.eks.amazonaws.com on 192.168.1.254:53: no such host
+
+i had to cdo kubectl get-contexts to see the list of contexts and found an eks cluster in the dev namespace like below 
+NAMESPACE
+*         arn:aws:eks:us-east-1:902439583999:cluster/dev   arn:aws:eks:us-east-1:902439583999:cluster/dev   arn:aws:eks:us-east-1:902439583999:cluster/dev 
+
+i deleted the contexts as i was not using it at the time, i wanted to use a diferent context and set my kubectl config file to connect to my cluster 
+
+By default, docker desktop comes with a pre-configured kubectl config fie but mine did not as i had to manually craete a new config file to interract with my clluster
+
+***kubectl config set-context my-docker-desktop --user=default
+This command creates a context named "my-docker-desktop" and uses the default user but you can use your name,  It assumes that your Docker Desktop is running the Kubernetes cluster locally.
+
+Set the Current Context: To set the newly created context as the current context, This command sets the context you just created as the active context.
+***kubectl config use-context my-docker-desktop
+
+Verify the Configuration
+***kubectl config current-context
+
+I ran the kubectl apply -f deployment.yaml file and got the error below
+***The connection to the server localhost:8080 was refused - did you specify the right host or port?
+
+I ensured that both docker desktop and kubernetes are running and the error shows that the Kubernetes API server is unable to connect with the kubectl
+
+
+I also tried to echo my KUBEconfig file by using echo $KUBECONFIG to ensure my kubeconfig ENV is set to point to the kubeconfgi file 
+
+when i did echo and i got nothing in return, i had to set my Env to the correct path of my kubeconfig file like below 
+
+export KUBECONFIG=/home/nita/.kube/config
+
+i tried running kubectl apply -f deployment.yaml and still got the localhost:8080 was refused error
+
+i had to check that the kubernetes is available on default port localhost:6443 and not localhost:8080 by updating my kubeconfig file using the code below
+kubectl config set-context my-docker-desktop --cluster=docker-reg --user=nita --namespace=default --server=https://localhost:6443
+
+i did kubectl config get-contexts to see the modification
+
+i ran the kubectl apply -f deployment.yaml again and same error, i can find my newly created contexts but cant find the created cluster i want to use 
+
+However, it appears there's a mix of AWS EKS and Docker Desktop configurations within the kubeconfig file. This could be the source of the issue you're facing.
+i edited the kubeconfig file using vi and cd to folder with config file
+users:
+- name: arn:aws:eks:us-east-1:902439583999:cluster/dev
+...
+
+
+You need to have a cluster definition for Docker Desktop in your kubeconfig. It should specify the server URL and certificate information. Here's an example of how it should look:
+
+yaml
+Copy code
+clusters:
+- cluster:
+    server: https://localhost:6443
+    certificate-authority: /path/to/your/cert-file
+  name: docker-desktop
+
+
+Make sure the server URL points to the correct Kubernetes API server for Docker Desktop, and the certificate-authority is configured properly.
+
+Update Context Configuration: Update the context entry "my-docker-desktop" to reference the Docker Desktop cluster and the appropriate user. Ensure that the "cluster" and "user" fields point to the respective definitions:
+
+yaml
+Copy code
+contexts:
+- context:
+    cluster: docker-desktop
+    user: nita
+    namespace: default
+  name: my-docker-desktop
+
+
+Save and Test: Save the updated kubeconfig file, and then test it using the following command:
+
+Copy code
+kubectl config use-context my-docker-desktop
+kubectl cluster-info 
+
+
+my new config file 
+apiVersion: v1
+kind: Config
+clusters:
+- name: docker-reg
+  cluster:
+    server: https://localhost:6443
+users:
+- name: nita
+  user: {}
+contexts:
+- name: my-docker-desktop
+  context:
+    user: nita
+    cluster: docker-reg
+current-context: my-docker-desktop
+
+ kubectl apply -f deployment.yaml, got the error below 
+Please enter Username: nita
+Please enter Password: Unable to connect to the server: x509: certificate signed by unknown authority
+
+soluton
+kubectl config view
+
+Make sure that the certificate-authority field in the cluster definition matches the CA used by your Kubernetes API server.
+
+Self-Signed Certificates: If you are using self-signed certificates for your Kubernetes API server, you can add the --insecure-skip-tls-verify flag to the kubectl command to skip SSL certificate verification. However, this approach is not recommended for production clusters due to security concerns.
+***kubectl apply -f deployment.yaml --insecure-skip-tls-verify
+
+
+Trusted CA Certificate: If you have a trusted CA certificate, ensure it is correctly configured in your kubeconfig file. You may need to update the certificate-authority field in the cluster definition to point to the trusted CA certificate.
+clusters:
+- cluster:
+    certificate-authority: /path/to/trusted/ca.crt
+    server: https://your-cluster-url
+  name: docker-reg
+
+
+
+Get self-signed certificate using (for non production only)
+sudo apt-get install openssl
+# Generate a private key (e.g., named server-key.pem)
+openssl genpkey -algorithm RSA -out server-key.pem
+
+# Generate a self-signed certificate (e.g., named server-cert.pem)
+openssl req -new -key server-key.pem -x509 -days 365 -out server-cert.pem
+ca-csr.pem   ca-key.pem  /home/nita/docker-registery/server-cert.pem
+
+
+After generating self signed cert, and also including path to CA cert in my kube config file, i got a username and password prompt which i do not have
+
+ so i did the following 
+ Connecting with curl:
+
+If you are connecting to a service using curl, you can provide the client certificate, key, username, and password using the --cert, --key, --user, and --cacert options
+curl --cert client-cert.pem --key client-key.pem --user username:password --cacert ca-cert.pem https://your-service-url
+curl --cert /home/nita/docker-registery/server-cert.pem --key /home/nita/docker-registery/server-key.pem --user username:password --cacert /home/nita/docker-registery/server-cert.pem https://localhost:6443
+sudo vi /etc/apt/sources.list
+curl --cacert /etc/ssl/certs/ca-certificates.crt https://localhost:6443
+
+
+i had to use gitbash and everything worked without userame and password prompt 
+i did kubectl apply -f deployment.yaml and it worked
+i did kubectl get nodes and it worked 
+i did kubectl get svc docker-registry and it worked
+i tried to access the local docker registery using localhost:nodeport from step 146 and got a blank webpage 
+i used alpine image 2.8.3 as the docker image as it is lightweight which makes docker build faster and it makes it easy for users to get a shell within a container for testing puropose
+
+
+
+To access the registry from within the Kubernetes cluster, you can run a pod with a shell and use the kubectl command.
+kubectl run -i --tty --rm debug --image=registry:2.8.3 -- sh
+
+Inside the shell, you can test registry access:
+apk add curl # Install curl if not already available
+curl registry-service:5000/v1/ # Replace 'registry-service' with the actual service name
+curl docker-reg-service:5000/v2     5000-docker regisry listens on this port by default
+                                   v2-(version 2)the version of the docker API that's interacting with registry
+If everything is configured correctly, you should be able to access the Docker Registry both from your local machine and within the Kubernetes cluster.
+
+i got this error after step 158. curl: (7) Failed to connect to docker-registry port 5000 after 21058 ms: Couldn't connect to serve
+
+
+i tried to connect inside the container using the port 5000 containerport using 
+curl -v <ip of pod>:5000 and got 200 OK response 
+
+kubectl port-forward POD_NAME [LOCAL_PORT:]REMOTE_PORT or kubectl port-forward svc/svc-name [LOCAL_PORT:]REMOTE_PORT
+kubectl port-forward service/docker-reg-service 8080:8080
+This command forwards traffic from port 8080 on your local machine to port 8080 on the pods selected by the Service
+http://localhost:8080 in your web browser or using other tools that communicate over HTTP.
+
+
+
+docker logs 92b319e5227d
+docker inspect 92b319e5227d
+/c/Users/flora/.kube/certificate-authority-data
+/c/Users/flora/.kube/client-certificate-data
+/c/Users/flora/.kube/client-key-data
+
+
+ A new release of pip is available: 23.1.2 -> 23.3.1
+[notice] To update, run: python.exe -m pip install --upgrade pip
+
+
+kubectl get svc registry-nodeport -o jsonpath='{.spec.ports[0].nodePort}'
+kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}'
