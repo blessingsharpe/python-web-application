@@ -1,0 +1,27 @@
+After provisioning my infrastrucure, i tried to create the eks cluster using terraform PLAN first and got the error below 
+ terraform plan
+╷
+│ Error: Invalid depends_on reference
+│ 
+│   on main.tf line 97, in resource "aws_eks_cluster" "pythonapp_cluster":
+│   97:   depends_on = [aws_eks_cluster_auth.pythonapp_cluster.name]
+│ 
+│ References in depends_on must be to a whole object (resource, etc), not to an attribute of an object.
+╵
+╷
+│ Error: Invalid resource type
+│ 
+│   on main.tf line 149, in resource "aws_eks_cluster_auth" "pythonapp_cluster_auth":
+│  149: resource "aws_eks_cluster_auth" "pythonapp_cluster_auth" {
+│ 
+│ The provider hashicorp/aws does not support resource type "aws_eks_cluster_auth".
+│ 
+│ Did you intend to use the data source "aws_eks_cluster_auth"? If so, declare this using a "data" block instead of a "resource" block.
+
+SOLUTION
+The error message you received indicates that you are using the depends_on attribute with an incorrect reference. In Terraform, the depends_on attribute should reference a resource object 
+and (aws_eks_cluster_auth) is not a RESOURCE object
+
+
+I got another error while creating the worker nodes, it needed subnet ids and i referenced only the private id of subnet but it didnt fix it 
+so i referenced both private and public subnets and ran terraform plan again and it worked
